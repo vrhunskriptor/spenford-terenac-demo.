@@ -278,7 +278,7 @@ var MICS=['3,20','4,15','2,85','5,40','1,10','0,80'];
 var S={online:true,screen:'tasks',stack:[],tid:'t1',cont:0,item:0,kp:null,sheet:null,flash:false,tab:'dir',clock:10*60+42,micN:0,data:{}};
 function mkItem(n,m){return {name:n,m:m!==false,photos:[],parts:null,tip:'Ručni / daljinski'}}
 function newData(t){
-  var d={status:'Dodeljen',tpl:{},sent:null,conts:[]};
+  var d={status:'Dodeljen',tpl:{},sent:null,conts:[],dev:{none:false,list:[]}};
   if(t.mode==='parcel'){d.conts=[{name:null,items:SLOTS.map(function(n){return mkItem(n,false)})}]}
   else if(t.mode==='objects'){d.conts=[]}
   else d.conts=[{name:null,items:[]}];
@@ -291,6 +291,7 @@ function seed(){
   var b=mkItem('Ulaz i stepenište',false);b.photos=['10:24','10:25'];
   d.conts[0].items.push(a,b);
   d.tpl.godina='1978';d.tpl.lift='Ne';
+  d.dev.list.push({kind:'Odstupanje u površini',cause:'Zbog godine gradnje',where:'Dnevna soba',text:'Izmereno 1,2 m² više nego u listu nepokretnosti.',photos:1});
 }
 function task(){return TASKS.filter(function(t){return t.id===S.tid})[0]}
 function dat(){return S.data[S.tid]}
@@ -310,6 +311,7 @@ function checks(t){
   var base=t.mode==='objects'?'Označi bar jedan objekat na snimku.':'Dodaj bar jednu prostoriju.';
   out.push({ok:it.length>0&&!noPh.length,t:'Fotografije',s:!it.length?base:(noPh.length?'Fale slike: '+noPh.map(function(i){return i.name}).join(', '):'Sve stavke imaju slike ('+it.length+')'),go:'hub'});
   if(t.mode!=='parcel')out.push({ok:it.length>0&&!noM.length,t:'Mere',s:noM.length?'Fale mere: '+noM.map(function(i){return i.name}).join(', '):(it.length?'Sve prostorije su izmerene':'Nema stavki za merenje'),go:'hub'});
+  out.push({ok:d.dev.none||d.dev.list.length>0,t:'Odstupanja',s:d.dev.none?'Potvrđeno: nema odstupanja':(d.dev.list.length?'Uneto: '+d.dev.list.length:'Unesi odstupanja ili potvrdi da ih nema'),go:'dev'});
   out.push({ok:ts[0]===ts[1],t:'Šablon obilaska',s:ts[0]+' od '+ts[1]+' obaveznih polja',go:'tpl'});
   return out;
 }
@@ -332,8 +334,8 @@ function sTasks(){
 }
 function sTask(){
   var t=task(),d=dat();
-  var steps=t.mode==='objects'?['Na snimku označi objekte i slikaj prostorije','Popuni šablon obilaska','Pregled i slanje']:(t.mode==='parcel'?['Slikaj pristup, strane sveta i stanje zemljišta','Popuni šablon obilaska','Pregled i slanje']:['Slikaj prostorije i unesi mere','Popuni šablon obilaska','Pregled i slanje']);
-  var c=checks(t),ok=[c[0].ok&&(t.mode==='parcel'||c[1].ok),c[c.length-1].ok,!!d.sent];
+  var steps=t.mode==='objects'?['Na snimku označi objekte i slikaj prostorije','Popuni šablon i odstupanja','Pregled i slanje']:(t.mode==='parcel'?['Slikaj pristup, strane sveta i stanje zemljišta','Popuni šablon i odstupanja','Pregled i slanje']:['Slikaj prostorije i unesi mere','Popuni šablon i odstupanja','Pregled i slanje']);
+  var c=checks(t),ok=[c[0].ok&&(t.mode==='parcel'||c[1].ok),c[c.length-1].ok&&c[c.length-2].ok,!!d.sent];
   return appbar(t.tl+' · '+t.sub,'Predmet '+t.broj,true)+'<div class="body">'+
    '<div class="addr" style="font-size:22px">'+esc(t.adresa)+'</div><div class="meta">'+esc(t.opis)+'</div>'+
    (t.build?'<div class="banner" style="margin-top:12px">U izgradnji. Upiši procenat završenosti, procenitelj potvrđuje.</div>':'')+
@@ -353,7 +355,30 @@ function sHub(){
   var chips=t.chips.map(function(x){return '<button class="chip add" data-act="addItem" data-n="'+esc(x[0])+'" data-m="'+(x[1]===0?0:1)+'">+ '+esc(x[0])+'</button>'}).join('');
   return appbar(title,c.name?t.short:t.adresa,true)+'<div class="body">'+
    '<div class="list">'+(list||'<div class="empty">Još nema stavki. Izaberi prostoriju ispod.</div>')+'</div>'+
-   '<div class="lbl">'+(t.mode==='parcel'?'Dodaj još':'Dodaj prostoriju')+'</div><div class="chips">'+chips+'</div></div>'+footHub(t);
+   (c.name?'':devCard())+'<div class="lbl">'+(t.mode==='parcel'?'Dodaj još':'Dodaj prostoriju')+'</div><div class="chips">'+chips+'</div></div>'+footHub(t);
+}
+var DEV_KINDS=['Odstupanje u površini','Zatvorena terasa ili lođa','Postavljen pregradni zid','Srušen zid','Promena namene prostorije','Dozidan ili nadograđen deo','Drugo'];
+function devCard(){
+  var d=dat(),n=d.dev.list.length,ok=d.dev.none||n>0;
+  var s=d.dev.none?'Nema odstupanja':(n?n+(n===1?' odstupanje':' odstupanja'):'Nije uneto');
+  return '<div class="lbl">Odstupanja od dokumentacije</div><button class="item" data-act="openDev"><div class="grow"><div class="n">Adaptacije i odstupanja</div><div class="m">'+s+'</div></div><span class="st '+(ok?'':'warn')+'">'+(ok?'Gotovo':'Fali')+'</span>'+ic('chev',18)+'</button>';
+}
+function sDev(){
+  var d=dat(),names=['Cela nepokretnost'];
+  allItems(d).forEach(function(i){if(i.m)names.push(i.name)});
+  var list=d.dev.list.map(function(e,i){
+    var h='<div class="card"><div class="row2" style="margin:0 0 12px"><h3 style="margin:0">'+esc(e.kind)+'</h3><button class="del" data-act="devdel" data-i="'+i+'" aria-label="Ukloni odstupanje">'+ic('x',20)+'</button></div>';
+    if(e.kind==='Odstupanje u površini'){h+='<div class="fl" style="margin-top:0">Uzrok</div><div class="chips">'+['Zbog godine gradnje','Drugi razlog'].map(function(x){return '<button class="chip '+(e.cause===x?'on':'')+'" data-act="devset" data-i="'+i+'" data-f="cause" data-v="'+x+'">'+x+'</button>'}).join('')+'</div>'}
+    h+='<div class="fl">Odnosi se na</div><div class="chips">'+names.map(function(x){return '<button class="chip '+(e.where===x?'on':'')+'" data-act="devset" data-i="'+i+'" data-f="where" data-v="'+esc(x)+'">'+esc(x)+'</button>'}).join('')+'</div>';
+    h+='<div class="fl">Napomena</div><textarea id="dv_'+i+'" data-dev="'+i+'" rows="2" placeholder="Kucaj ili izgovori">'+esc(e.text||'')+'</textarea>';
+    h+='<button class="btn small" data-act="devphoto" data-i="'+i+'">Dodaj sliku'+(e.photos?' ('+e.photos+')':'')+'</button></div>';
+    return h;
+  }).join('');
+  return appbar('Odstupanja','Adaptacije i razlike od dokumentacije',true)+'<div class="body">'+
+   '<p class="note" style="margin-top:0">Izaberi vrstu odstupanja ili izaberi „Drugo“ i opiši tekstom. Možeš dodati više.</p>'+list+
+   (d.dev.list.length?'':'<div class="lbl">Ako ih nema</div><div class="chips"><button class="chip '+(d.dev.none?'on':'')+'" data-act="devnone">Nema odstupanja</button></div>')+
+   '<div class="lbl">Dodaj odstupanje</div><div class="chips">'+DEV_KINDS.map(function(x){return '<button class="chip add" data-act="devadd" data-v="'+x+'">+ '+x+'</button>'}).join('')+'</div></div>'+
+   '<div class="foot"><button class="btn primary" data-act="back">Gotovo</button></div>';
 }
 var VF='<svg class="vf" viewBox="0 0 320 240" aria-hidden="true"><defs><linearGradient id="wl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d5cfc3"/><stop offset="1" stop-color="#b8b09f"/></linearGradient></defs><rect width="320" height="240" fill="url(#wl)"/><polygon points="0,168 320,168 320,240 0,240" fill="#8b7b64"/><polygon points="0,0 54,36 54,168 0,168" fill="#c3bcae"/><polygon points="320,0 266,36 266,168 320,168" fill="#c9c2b4"/><rect x="118" y="52" width="84" height="76" fill="#e1ebf1" stroke="#7c776b" stroke-width="4"/><line x1="160" y1="52" x2="160" y2="128" stroke="#7c776b" stroke-width="3"/><rect x="226" y="108" width="26" height="60" fill="#a79d8a"/><g stroke="#fff" stroke-opacity=".35" stroke-width="1"><line x1="107" y1="0" x2="107" y2="240"/><line x1="213" y1="0" x2="213" y2="240"/><line x1="0" y1="80" x2="320" y2="80"/><line x1="0" y1="160" x2="320" y2="160"/></g><g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M14 34V14h20M286 14h20v20M306 206v20h-20M34 226H14v-20"/></g></svg>';
 function sRoom(){
@@ -406,7 +431,7 @@ function sObjects(){
   var svg='<svg viewBox="0 0 320 220" role="img" aria-label="Satelitski snimak kompleksa, dodirni objekat"><rect width="320" height="220" fill="#51633f"/><polygon points="0,0 120,0 90,60 0,80" fill="#5c6f46"/><polygon points="200,220 320,160 320,220" fill="#48583a"/><rect x="0" y="108" width="320" height="16" fill="#8d8d86"/><rect x="164" y="0" width="12" height="220" fill="#8d8d86"/><rect x="8" y="8" width="304" height="204" fill="none" stroke="#fff" stroke-opacity=".7" stroke-dasharray="6 5" stroke-width="2"/>'+
    BLD.map(function(b){var n=pinned[b.id];return '<g data-act="bld" data-b="'+b.id+'"><rect x="'+(b.x+3)+'" y="'+(b.y+3)+'" width="'+b.w+'" height="'+b.h+'" fill="#000" opacity=".3"/><rect x="'+b.x+'" y="'+b.y+'" width="'+b.w+'" height="'+b.h+'" fill="'+(n?'#e7e2d6':'#bdb7a9')+'" stroke="'+(n?'#6F35A5':'#6f6a5e')+'" stroke-width="'+(n?4:2)+'"/>'+(n?'<circle cx="'+(b.x+b.w/2)+'" cy="'+(b.y+b.h/2)+'" r="15" fill="#6F35A5"/><text x="'+(b.x+b.w/2)+'" y="'+(b.y+b.h/2+6)+'" text-anchor="middle" font-family="IBM Plex Mono,monospace" font-weight="600" font-size="18" fill="#fff">'+n+'</text>':'')+'</g>'}).join('')+'</svg>';
   return appbar('Objekti na snimku',t.short,true)+'<div class="body"><p class="note" style="margin-top:0">Dodirni zgradu koju trenutno obilaziš. Svaki objekat dobija svoj folder.</p><div class="map">'+svg+'</div><div class="meta" style="margin:6px 2px 0">Snimak sa Geosrbije (demo)</div>'+
-   '<div class="lbl">Označeni objekti</div><div class="list">'+(d.conts.map(function(c,i){var ph=c.items.reduce(function(s,x){return s+x.photos.length},0);return '<button class="item" data-act="openCont" data-i="'+i+'"><div class="grow"><div class="n">'+esc(c.name)+'</div><div class="m">'+c.items.length+' stavki · '+ph+' slika</div></div>'+ic('chev',18)+'</button>'}).join('')||'<div class="empty">Još nijedan objekat nije označen.</div>')+'</div></div>'+footHub(t);
+   '<div class="lbl">Označeni objekti</div><div class="list">'+(d.conts.map(function(c,i){var ph=c.items.reduce(function(s,x){return s+x.photos.length},0);return '<button class="item" data-act="openCont" data-i="'+i+'"><div class="grow"><div class="n">'+esc(c.name)+'</div><div class="m">'+c.items.length+' stavki · '+ph+' slika</div></div>'+ic('chev',18)+'</button>'}).join('')||'<div class="empty">Još nijedan objekat nije označen.</div>')+'</div>'+devCard()+'</div>'+footHub(t);
 }
 function sSend(){
   var t=task(),d=dat(),c=checks(t),all=c.every(function(x){return x.ok});
@@ -436,7 +461,7 @@ function overlay(){
   return h;
 }
 function screenHTML(){
-  switch(S.screen){case 'task':return sTask();case 'hub':return sHub();case 'room':return sRoom();case 'measure':return sMeasure();case 'tpl':return sTpl();case 'objects':return sObjects();case 'send':return sSend();default:return sTasks()}
+  switch(S.screen){case 'task':return sTask();case 'hub':return sHub();case 'room':return sRoom();case 'measure':return sMeasure();case 'tpl':return sTpl();case 'objects':return sObjects();case 'dev':return sDev();case 'send':return sSend();default:return sTasks()}
 }
 function render(){
   var sc=$('#scr'),prev=sc.querySelector('.body'),key=S.screen+S.tid+S.cont+S.item,keep=(prev&&prev.dataset.k===key)?prev.scrollTop:0;
@@ -466,6 +491,8 @@ function treeHTML(t,d){
 function dataHTML(t,d){
   var rows=[['Status predmeta',d.status,'']],items=allItems(d).filter(function(i){return i.photos.length});
   if(t.mode==='rooms'&&items.length)rows.push(['Funkcionalna organizacija',items.filter(function(i){return i.m}).map(function(i){return i.name.toLowerCase()}).join(', '),t.tl==='Stan'?'Poseban deo!B18':'—']);
+  if(d.dev.none)rows.push(['Odstupanja','Nema odstupanja','—']);
+  d.dev.list.forEach(function(e,i){rows.push(['Odstupanje '+(i+1),e.kind+(e.cause?' ('+e.cause.toLowerCase()+')':'')+(e.where?', '+e.where:'')+(e.text?': '+e.text:''),'—'])});
   TPL[t.tpl].forEach(function(g){g.f.forEach(function(f){var v=d.tpl[f.k];if(!filled(v)||!show(f,d))return;
     rows.push([f.l,Array.isArray(v)?v.join(', '):(f.t==='pct'?v+'%':(v+(f.unit?' '+f.unit:''))),f.cell||'—'])})});
   var h='<p class="cap">Svako polje ima svoju ćeliju u SPENFORD Excelu. Tamo gde piše crtica, polje još nema odredište.</p><div class="tblw"><table class="tbl"><thead><tr><th>Podatak</th><th>Vrednost</th><th>Ćelija u Excelu</th></tr></thead><tbody>'+
@@ -535,7 +562,13 @@ var A={
  pct:function(e){var d=dat(),v=typeof d.tpl.pct==='number'?d.tpl.pct:0;d.tpl.pct=Math.max(0,Math.min(100,v+(+e.d)))},
  tmic:function(e){var f=findField(e.k),d=dat();d.tpl[e.k]=(d.tpl[e.k]?d.tpl[e.k]+' ':'')+f.sample},
  openSend:function(){go('send')},
- fix:function(e){back();if(e.go==='tpl')go('tpl')},
+ fix:function(e){back();if(e.go==='tpl')go('tpl');if(e.go==='dev')go('dev')},
+ openDev:function(){go('dev')},
+ devadd:function(e){var d=dat();d.dev.list.push({kind:e.v,cause:'',where:'',text:'',photos:0});d.dev.none=false},
+ devdel:function(e){dat().dev.list.splice(+e.i,1)},
+ devnone:function(){var d=dat();d.dev.none=!d.dev.none},
+ devset:function(e){var x=dat().dev.list[+e.i];x[e.f]=(x[e.f]===e.v)?'':e.v},
+ devphoto:function(e){var x=dat().dev.list[+e.i];x.photos=(x.photos||0)+1},
  send:function(){var d=dat();if(S.online){d.status='Poslato';d.sent={queued:false}}else{d.status='Čeka signal';d.sent={queued:true}}},
  bld:function(e){var d=dat(),i=-1;d.conts.forEach(function(c,k){if(c.bid===e.b)i=k});if(i>-1)go('hub',{cont:i});else S.sheet=e.b},
  objtype:function(e){var d=dat();d.conts.push({name:'Objekat '+(d.conts.length+1)+' – '+e.v,bid:S.sheet,items:[]});S.sheet=null;go('hub',{cont:d.conts.length-1})},
@@ -552,6 +585,7 @@ function fillDemo(){
     while(i.photos.length<2){S.clock++;i.photos.push(hhmm())}
     if(i.m&&total(i)<=0){var s=sz[k++%sz.length];i.parts=[{s:1,l:s[0],w:s[1]}]}});
   TPL[t.tpl].forEach(function(g){g.f.forEach(function(f){if(!f.req&&f.k!=='nap')return;if(f.t==='chips')d.tpl[f.k]=f.o[0];else if(f.t==='yn')d.tpl[f.k]='Da';else if(f.t==='multi')d.tpl[f.k]=[f.o[0]];else if(f.t==='num')d.tpl[f.k]=f.sample;else if(f.t==='pct')d.tpl[f.k]=60;else if(f.t==='text'&&!f.showIf)d.tpl[f.k]=f.sample})});
+  if(!d.dev.none&&!d.dev.list.length)d.dev.none=true;
   if(d.status==='Dodeljen')d.status='Na terenu';
 }
 
@@ -562,7 +596,9 @@ $('#scr').addEventListener('click',function(ev){
   fn(el.dataset);render();
 });
 $('#scr').addEventListener('input',function(ev){
-  var el=ev.target;if(el.matches&&el.matches('textarea[data-k]')){dat().tpl[el.dataset.k]=el.value;renderSide()}
+  var el=ev.target;
+  if(el.matches&&el.matches('textarea[data-k]')){dat().tpl[el.dataset.k]=el.value;renderSide()}
+  if(el.matches&&el.matches('textarea[data-dev]')){dat().dev.list[+el.dataset.dev].text=el.value;renderSide()}
 });
 $('#side').addEventListener('click',function(ev){
   var el=ev.target.closest('[data-side]');if(!el)return;
